@@ -1,771 +1,1007 @@
--- NexusX Hub - Premium Edition v4.0
--- Fixed Version - No CoreGui Errors
+--[[
+    M20 Project - Violence District Suite
+    Version: 5.0 Complete Rewrite
+    Made by: M20 Development Team
+    
+    Complete rewrite with proper error handling
+]]
 
--- Load Rayfield safely
-local success, Rayfield = pcall(function()
-    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-end)
+-- ========================================
+-- INITIALIZATION & SAFETY CHECKS
+-- ========================================
 
-if not success or not Rayfield then
-    warn("[NexusX] Failed to load Rayfield UI Library")
+local function safeRequire(url)
+    local success, result = pcall(function()
+        return loadstring(game:HttpGet(url))()
+    end)
+    return success and result or nil
+end
+
+-- Load UI Library
+local Rayfield = safeRequire("https://sirius.menu/rayfield")
+if not Rayfield then
+    warn("[M20 Project] Failed to load UI library")
     return
 end
 
--- Services
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local Lighting = game:GetService("Lighting")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser = game:GetService("VirtualUser")
-local LP = Players.LocalPlayer
+-- ========================================
+-- SERVICES
+-- ========================================
 
--- ========= SAFE UTILS =========
-local function alive(i)
-    if not i then return false end
-    local ok, result = pcall(function() return i.Parent end)
-    return ok and result ~= nil
-end
+local Services = {
+    Players = game:GetService("Players"),
+    RunService = game:GetService("RunService"),
+    Workspace = game:GetService("Workspace"),
+    Lighting = game:GetService("Lighting"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    VirtualUser = game:GetService("VirtualUser")
+}
 
-local function validPart(p) 
-    return p and alive(p) and p:IsA("BasePart") 
-end
+local Player = Services.Players.LocalPlayer
 
-local function clamp(n,lo,hi) 
-    if n<lo then return lo 
-    elseif n>hi then return hi 
-    else return n end 
-end
+-- ========================================
+-- UTILITY FUNCTIONS
+-- ========================================
 
-local function now() 
-    return os.clock() 
-end
+local Utils = {}
 
-local function dist(a,b) 
-    return (a-b).Magnitude 
-end
-
-local function firstBasePart(inst)
-    if not alive(inst) then return nil end
-    if inst:IsA("BasePart") then return inst end
-    if inst:IsA("Model") then
-        if inst.PrimaryPart and validPart(inst.PrimaryPart) then 
-            return inst.PrimaryPart 
-        end
-        local p = inst:FindFirstChildWhichIsA("BasePart", true)
-        if validPart(p) then return p end
-    end
-    return nil
-end
-
--- ========= SAFE BILLBOARD =========
-local function makeBillboard(text, color3)
-    local success, gui = pcall(function()
-        local g = Instance.new("BillboardGui")
-        g.Name = "NX_Tag"
-        g.AlwaysOnTop = true
-        g.Size = UDim2.new(0, 200, 0, 40)
-        g.StudsOffset = Vector3.new(0, 3.5, 0)
-        
-        local l = Instance.new("TextLabel")
-        l.Name = "Label"
-        l.BackgroundTransparency = 0.5
-        l.BackgroundColor3 = Color3.new(0, 0, 0)
-        l.BorderSizePixel = 0
-        l.Size = UDim2.new(1, 0, 1, 0)
-        l.Font = Enum.Font.GothamBold
-        l.Text = text
-        l.TextSize = 15
-        l.TextColor3 = color3 or Color3.new(1,1,1)
-        l.TextStrokeTransparency = 0
-        l.TextStrokeColor3 = Color3.new(0,0,0)
-        l.Parent = g
-        
-        return g
+function Utils.isAlive(instance)
+    if not instance then return false end
+    local success, parent = pcall(function() 
+        return instance.Parent 
     end)
-    
-    return success and gui or nil
+    return success and parent ~= nil
 end
 
--- ========= SAFE BOX ESP =========
-local function ensureBoxESP(part, name, color)
-    if not validPart(part) then return end
-    
+function Utils.isValidPart(part)
+    return part and Utils.isAlive(part) and part:IsA("BasePart")
+end
+
+function Utils.getDistance(pos1, pos2)
+    local success, distance = pcall(function()
+        return (pos1 - pos2).Magnitude
+    end)
+    return success and distance or math.huge
+end
+
+function Utils.safeDestroy(instance)
     pcall(function()
-        local existing = part:FindFirstChild(name)
-        if existing then
-            existing.Color3 = color
-            existing.Size = part.Size + Vector3.new(0.3,0.3,0.3)
-            return
+        if instance and instance.Parent then
+            instance:Destroy()
         end
-        
-        local b = Instance.new("BoxHandleAdornment")
-        b.Name = name
-        b.Adornee = part
-        b.ZIndex = 10
-        b.AlwaysOnTop = true
-        b.Transparency = 0.4
-        b.Size = part.Size + Vector3.new(0.3,0.3,0.3)
-        b.Color3 = color
-        b.Parent = part
     end)
 end
 
--- ========= SAFE HIGHLIGHT =========
-local function ensureHighlight(model, fill)
-    if not (model and model:IsA("Model") and alive(model)) then return end
-    
+function Utils.safeDisconnect(connection)
     pcall(function()
-        local hl = model:FindFirstChild("NX_HL")
-        if not hl then
-            hl = Instance.new("Highlight")
-            hl.Name = "NX_HL"
-            hl.Adornee = model
-            hl.FillTransparency = 0.4
-            hl.OutlineTransparency = 0
-            hl.Parent = model
-        end
-        hl.FillColor = fill
-        hl.OutlineColor = fill
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    end)
-end
-
-local function clearHighlight(model)
-    pcall(function()
-        if model and model:FindFirstChild("NX_HL") then
-            model.NX_HL:Destroy()
+        if connection and connection.Connected then
+            connection:Disconnect()
         end
     end)
 end
 
-local function clearChild(o, n)
-    pcall(function()
-        if o and alive(o) then
-            local c = o:FindFirstChild(n)
-            if c then c:Destroy() end
-        end
-    end)
-end
+-- ========================================
+-- CREATE WINDOW
+-- ========================================
 
--- ========= CREATE WINDOW =========
 local Window = Rayfield:CreateWindow({
-    Name="⚡ NexusX Hub ULTRA",
-    LoadingTitle="NexusX Premium",
-    LoadingSubtitle="v4.0 Fixed Edition",
-    ConfigurationSaving={
-        Enabled=true,
-        FolderName="NexusX_Premium",
-        FileName="nx_config_v4"
+    Name = "M20 Project - VD Suite",
+    LoadingTitle = "M20 Project Loading",
+    LoadingSubtitle = "Violence District Edition",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "M20_Project",
+        FileName = "m20_config"
     },
-    KeySystem=false
+    KeySystem = false
 })
 
--- Create Tabs
-local TabPlayer = Window:CreateTab("🎮 Movement", 4483362458)
-local TabESP = Window:CreateTab("👁️ ESP Pro", 4483362458)
-local TabWorld = Window:CreateTab("🌍 World", 4483362458)
-local TabVisual = Window:CreateTab("✨ Visual", 4483362458)
-local TabMisc = Window:CreateTab("⚙️ Settings", 4483362458)
+-- Create tabs
+local Tabs = {
+    Player = Window:CreateTab("Player", 4483362458),
+    Combat = Window:CreateTab("Combat", 4483362458),
+    ESP = Window:CreateTab("ESP", 4483362458),
+    World = Window:CreateTab("World", 4483362458),
+    Visual = Window:CreateTab("Visual", 4483362458),
+    Misc = Window:CreateTab("Misc", 4483362458)
+}
 
--- ========= ROLE DETECTION =========
-local function getRole(p)
+-- ========================================
+-- ROLE DETECTION
+-- ========================================
+
+local RoleSystem = {
+    cache = {}
+}
+
+function RoleSystem:getRole(player)
+    if not player then return "Survivor" end
+    
     local success, team = pcall(function()
-        return p.Team
+        return player.Team
     end)
     
     if not success or not team then return "Survivor" end
     
-    local tn = tostring(team.Name):lower()
-    if tn:find("killer") then return "Killer" end
+    local teamName = tostring(team.Name):lower()
+    if teamName:find("killer") or teamName:find("murder") then
+        return "Killer"
+    end
+    
     return "Survivor"
 end
 
--- ========= PLAYER ESP =========
-local survivorColor = Color3.fromRGB(0,255,150)
-local killerColor = Color3.fromRGB(255,50,50)
-local playerESPEnabled = false
-local nametagsEnabled = false
-local playerConns = {}
-
-local function applyPlayerESP(p)
-    if p == LP then return end
-    
-    pcall(function()
-        local c = p.Character
-        if not (c and alive(c)) then return end
-        
-        local col = (getRole(p)=="Killer") and killerColor or survivorColor
-        
-        if playerESPEnabled then
-            if c:IsDescendantOf(Workspace) then
-                ensureHighlight(c, col)
-            end
-            
-            local head = c:FindFirstChild("Head")
-            if nametagsEnabled and validPart(head) then
-                local tag = head:FindFirstChild("NX_Tag")
-                if not tag then
-                    tag = makeBillboard(p.Name, col)
-                    if tag then
-                        tag.Parent = head
-                    end
-                else
-                    local l = tag:FindFirstChild("Label")
-                    if l then
-                        l.Text = (getRole(p)=="Killer" and "⚠️ " or "✅ ")..p.Name
-                        l.TextColor3 = col
-                    end
-                end
-            else
-                clearChild(head, "NX_Tag")
-            end
-        else
-            clearHighlight(c)
-            local head = c:FindFirstChild("Head")
-            clearChild(head, "NX_Tag")
-        end
-    end)
+function RoleSystem:isKiller(player)
+    return self:getRole(player or Player) == "Killer"
 end
 
-local function watchPlayer(p)
-    pcall(function()
-        if playerConns[p] then
-            for _,cn in ipairs(playerConns[p]) do
-                cn:Disconnect()
-            end
-        end
-        playerConns[p] = {}
-        
-        local conn1 = p.CharacterAdded:Connect(function()
-            task.delay(0.3, function() applyPlayerESP(p) end)
-        end)
-        table.insert(playerConns[p], conn1)
-        
-        if p.Character then
-            applyPlayerESP(p)
-        end
-    end)
-end
+-- ========================================
+-- ESP SYSTEM
+-- ========================================
 
--- ESP Tab
-TabESP:CreateSection("🎯 Player Detection")
-
-TabESP:CreateToggle({
-    Name="ESP Chams (Ultra)",
-    CurrentValue=false,
-    Flag="PlayerESP",
-    Callback=function(s)
-        playerESPEnabled = s
-        for _,pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LP then applyPlayerESP(pl) end
-        end
-        Rayfield:Notify({
-            Title="ESP System",
-            Content=s and "✅ Activated" or "❌ Deactivated",
-            Duration=3
-        })
-    end
-})
-
-TabESP:CreateToggle({
-    Name="Premium Nametags",
-    CurrentValue=false,
-    Flag="Nametags",
-    Callback=function(s)
-        nametagsEnabled = s
-        for _,pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LP then applyPlayerESP(pl) end
-        end
-    end
-})
-
-TabESP:CreateColorPicker({
-    Name="Survivor Color",
-    Color=survivorColor,
-    Flag="SurvivorCol",
-    Callback=function(c)
-        survivorColor = c
-        for _,pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LP then applyPlayerESP(pl) end
-        end
-    end
-})
-
-TabESP:CreateColorPicker({
-    Name="Killer Color",
-    Color=killerColor,
-    Flag="KillerCol",
-    Callback=function(c)
-        killerColor = c
-        for _,pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LP then applyPlayerESP(pl) end
-        end
-    end
-})
-
--- Initialize ESP
-for _,p in ipairs(Players:GetPlayers()) do
-    if p ~= LP then watchPlayer(p) end
-end
-
-Players.PlayerAdded:Connect(watchPlayer)
-
-Players.PlayerRemoving:Connect(function(p)
-    pcall(function()
-        if playerConns[p] then
-            for _,cn in ipairs(playerConns[p]) do
-                cn:Disconnect()
-            end
-            playerConns[p] = nil
-        end
-    end)
-end)
-
--- ========= WORLD ESP =========
-local worldColors = {
-    Generator = Color3.fromRGB(0,200,255),
-    Hook = Color3.fromRGB(255,50,50),
-    Gate = Color3.fromRGB(255,225,0),
+local ESPSystem = {
+    enabled = false,
+    nametags = false,
+    colors = {
+        survivor = Color3.fromRGB(0, 255, 100),
+        killer = Color3.fromRGB(255, 50, 50)
+    },
+    connections = {},
+    highlights = {}
 }
 
-local worldEnabled = {Generator=false, Hook=false, Gate=false}
-local worldReg = {Generator={}, Hook={}, Gate={}}
-local validCats = {Generator=true, Hook=true, Gate=true}
-
-local function pickRep(model, cat)
-    if not (model and alive(model)) then return nil end
-    if cat == "Generator" then
-        local hb = model:FindFirstChild("HitBox", true)
-        if validPart(hb) then return hb end
-    end
-    return firstBasePart(model)
-end
-
-local function genProgress(model)
-    local success, pct = pcall(function()
-        return tonumber(model:GetAttribute("RepairProgress")) or 0
-    end)
+function ESPSystem:createHighlight(model, color)
+    if not model or not Utils.isAlive(model) then return end
     
-    if not success then return 0 end
-    if pct >= 0 and pct <= 1.001 then pct = pct * 100 end
-    return clamp(pct, 0, 100)
-end
-
-local function ensureWorldEntry(cat, model)
     pcall(function()
-        if not alive(model) or worldReg[cat][model] then return end
-        local rep = pickRep(model, cat)
-        if not validPart(rep) then return end
-        worldReg[cat][model] = {part = rep}
-    end)
-end
-
-local function removeWorldEntry(cat, model)
-    pcall(function()
-        local e = worldReg[cat][model]
-        if not e then return end
-        clearChild(e.part, "NX_"..cat)
-        clearChild(e.part, "NX_Text_"..cat)
-        worldReg[cat][model] = nil
-    end)
-end
-
-local worldLoopThread = nil
-
-local function startWorldLoop()
-    if worldLoopThread then return end
-    
-    worldLoopThread = task.spawn(function()
-        while true do
-            local hasEnabled = false
-            for _,v in pairs(worldEnabled) do
-                if v then hasEnabled = true break end
-            end
-            
-            if not hasEnabled then
-                task.wait(1)
-            else
-                pcall(function()
-                    for cat, models in pairs(worldReg) do
-                        if worldEnabled[cat] then
-                            local col = worldColors[cat]
-                            local tagName = "NX_"..cat
-                            local textName = "NX_Text_"..cat
-                            
-                            for model, entry in pairs(models) do
-                                if alive(model) and entry.part then
-                                    ensureBoxESP(entry.part, tagName, col)
-                                    
-                                    local bb = entry.part:FindFirstChild(textName)
-                                    if not bb then
-                                        bb = makeBillboard("⚡ "..cat, col)
-                                        if bb then
-                                            bb.Name = textName
-                                            bb.Parent = entry.part
-                                        end
-                                    end
-                                    
-                                    if bb then
-                                        local lbl = bb:FindFirstChild("Label")
-                                        if lbl and cat == "Generator" then
-                                            local prog = genProgress(model)
-                                            lbl.Text = "⚡ Gen "..tostring(math.floor(prog)).."%"
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end)
-                task.wait(0.3)
-            end
-        end
-    end)
-end
-
-local function setWorldToggle(cat, state)
-    worldEnabled[cat] = state
-    if state then
-        startWorldLoop()
-    else
-        pcall(function()
-            for _, entry in pairs(worldReg[cat]) do
-                if entry and entry.part then
-                    clearChild(entry.part, "NX_"..cat)
-                    clearChild(entry.part, "NX_Text_"..cat)
-                end
-            end
-        end)
-    end
-end
-
--- Scan for world objects
-task.spawn(function()
-    while task.wait(2) do
-        pcall(function()
-            local map = Workspace:FindFirstChild("Map") or Workspace:FindFirstChild("Map1")
-            if not map then return end
-            
-            for _, d in ipairs(map:GetDescendants()) do
-                if d:IsA("Model") and validCats[d.Name] then
-                    ensureWorldEntry(d.Name, d)
-                end
-            end
-        end)
-    end
-end)
-
-TabWorld:CreateSection("🔍 Object Detection")
-TabWorld:CreateToggle({Name="⚡ Generators", CurrentValue=false, Flag="Gen", Callback=function(s) setWorldToggle("Generator", s) end})
-TabWorld:CreateToggle({Name="🪝 Hooks", CurrentValue=false, Flag="Hook", Callback=function(s) setWorldToggle("Hook", s) end})
-TabWorld:CreateToggle({Name="🚪 Gates", CurrentValue=false, Flag="Gate", Callback=function(s) setWorldToggle("Gate", s) end})
-
--- ========= SPEED SYSTEM =========
-local speedCurrent = 16
-local speedHumanoid = nil
-local speedEnforced = false
-local speedTickConn = nil
-
-local function setWalkSpeed(h, v)
-    pcall(function()
-        if h and h.Parent and h.Health > 0 then
-            h.WalkSpeed = v
-        end
-    end)
-end
-
-local function canEnforce()
-    if not speedEnforced then return false end
-    if not speedHumanoid or not speedHumanoid.Parent then return false end
-    if speedHumanoid.Health <= 0 then return false end
-    return true
-end
-
-local function heartbeat()
-    if not canEnforce() then return end
-    if speedHumanoid.WalkSpeed ~= speedCurrent then
-        setWalkSpeed(speedHumanoid, speedCurrent)
-    end
-end
-
-local function bindHumanoid(h)
-    speedHumanoid = h
-    if speedEnforced and canEnforce() then
-        if not speedTickConn then
-            speedTickConn = RunService.Heartbeat:Connect(heartbeat)
-        end
-        setWalkSpeed(h, speedCurrent)
-    end
-end
-
-TabPlayer:CreateSection("⚡ Movement Control")
-
-TabPlayer:CreateToggle({
-    Name="Speed Lock",
-    CurrentValue=false,
-    Flag="SpeedLock",
-    Callback=function(state)
-        speedEnforced = state
+        -- Remove old highlight
+        local old = model:FindFirstChild("M20_Highlight")
+        if old then old:Destroy() end
         
-        if state then
-            if speedHumanoid and speedHumanoid.Parent then
-                if not speedTickConn then
-                    speedTickConn = RunService.Heartbeat:Connect(heartbeat)
-                end
-                if canEnforce() then
-                    setWalkSpeed(speedHumanoid, speedCurrent)
+        -- Create new highlight
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "M20_Highlight"
+        highlight.Adornee = model
+        highlight.FillColor = color
+        highlight.OutlineColor = color
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = model
+        
+        self.highlights[model] = highlight
+    end)
+end
+
+function ESPSystem:removeHighlight(model)
+    if not model then return end
+    
+    pcall(function()
+        local highlight = model:FindFirstChild("M20_Highlight")
+        if highlight then
+            highlight:Destroy()
+        end
+        self.highlights[model] = nil
+    end)
+end
+
+function ESPSystem:createNametag(head, text, color)
+    if not Utils.isValidPart(head) then return end
+    
+    pcall(function()
+        -- Remove old nametag
+        local old = head:FindFirstChild("M20_Nametag")
+        if old then old:Destroy() end
+        
+        -- Create billboard
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "M20_Nametag"
+        billboard.Adornee = head
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        
+        -- Create label
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = color
+        label.TextStrokeTransparency = 0
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 16
+        label.Parent = billboard
+        
+        billboard.Parent = head
+    end)
+end
+
+function ESPSystem:removeNametag(head)
+    if not head then return end
+    
+    pcall(function()
+        local nametag = head:FindFirstChild("M20_Nametag")
+        if nametag then
+            nametag:Destroy()
+        end
+    end)
+end
+
+function ESPSystem:updatePlayer(player)
+    if player == Player then return end
+    if not player or not player.Character then return end
+    
+    pcall(function()
+        local character = player.Character
+        if not Utils.isAlive(character) then return end
+        
+        local role = RoleSystem:getRole(player)
+        local color = (role == "Killer") and self.colors.killer or self.colors.survivor
+        
+        -- Handle ESP
+        if self.enabled then
+            self:createHighlight(character, color)
+        else
+            self:removeHighlight(character)
+        end
+        
+        -- Handle nametags
+        local head = character:FindFirstChild("Head")
+        if head then
+            if self.nametags and self.enabled then
+                local prefix = (role == "Killer") and "[KILLER] " or ""
+                self:createNametag(head, prefix .. player.Name, color)
+            else
+                self:removeNametag(head)
+            end
+        end
+    end)
+end
+
+function ESPSystem:watchPlayer(player)
+    if player == Player then return end
+    
+    pcall(function()
+        -- Disconnect old connections
+        if self.connections[player] then
+            for _, conn in ipairs(self.connections[player]) do
+                Utils.safeDisconnect(conn)
+            end
+        end
+        
+        self.connections[player] = {}
+        
+        -- Character added
+        local charConn = player.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            self:updatePlayer(player)
+        end)
+        table.insert(self.connections[player], charConn)
+        
+        -- Update current character
+        if player.Character then
+            self:updatePlayer(player)
+        end
+    end)
+end
+
+function ESPSystem:cleanup(player)
+    pcall(function()
+        if player.Character then
+            self:removeHighlight(player.Character)
+            local head = player.Character:FindFirstChild("Head")
+            if head then
+                self:removeNametag(head)
+            end
+        end
+        
+        if self.connections[player] then
+            for _, conn in ipairs(self.connections[player]) do
+                Utils.safeDisconnect(conn)
+            end
+            self.connections[player] = nil
+        end
+    end)
+end
+
+function ESPSystem:initialize()
+    -- Watch all current players
+    for _, player in ipairs(Services.Players:GetPlayers()) do
+        self:watchPlayer(player)
+    end
+    
+    -- Watch new players
+    Services.Players.PlayerAdded:Connect(function(player)
+        self:watchPlayer(player)
+    end)
+    
+    -- Cleanup leaving players
+    Services.Players.PlayerRemoving:Connect(function(player)
+        self:cleanup(player)
+    end)
+end
+
+-- ========================================
+-- SPEED SYSTEM
+-- ========================================
+
+local SpeedSystem = {
+    enabled = false,
+    speed = 16,
+    humanoid = nil,
+    connection = nil
+}
+
+function SpeedSystem:setSpeed(value)
+    self.speed = value
+    if self.enabled and self.humanoid then
+        pcall(function()
+            if self.humanoid.Parent and self.humanoid.Health > 0 then
+                self.humanoid.WalkSpeed = value
+            end
+        end)
+    end
+end
+
+function SpeedSystem:enable()
+    self.enabled = true
+    
+    if self.connection then
+        Utils.safeDisconnect(self.connection)
+    end
+    
+    self.connection = Services.RunService.Heartbeat:Connect(function()
+        if not self.enabled then return end
+        if not self.humanoid or not self.humanoid.Parent then return end
+        
+        pcall(function()
+            if self.humanoid.Health > 0 and self.humanoid.WalkSpeed ~= self.speed then
+                self.humanoid.WalkSpeed = self.speed
+            end
+        end)
+    end)
+    
+    if self.humanoid then
+        self:setSpeed(self.speed)
+    end
+end
+
+function SpeedSystem:disable()
+    self.enabled = false
+    
+    if self.connection then
+        Utils.safeDisconnect(self.connection)
+        self.connection = nil
+    end
+    
+    if self.humanoid then
+        pcall(function()
+            if self.humanoid.Parent then
+                self.humanoid.WalkSpeed = 16
+            end
+        end)
+    end
+end
+
+function SpeedSystem:bindHumanoid(humanoid)
+    self.humanoid = humanoid
+    if self.enabled then
+        self:setSpeed(self.speed)
+    end
+end
+
+-- ========================================
+-- NOCLIP SYSTEM
+-- ========================================
+
+local NoclipSystem = {
+    enabled = false,
+    connection = nil
+}
+
+function NoclipSystem:enable()
+    self.enabled = true
+    
+    if self.connection then
+        Utils.safeDisconnect(self.connection)
+    end
+    
+    self.connection = Services.RunService.Stepped:Connect(function()
+        if not self.enabled then return end
+        
+        pcall(function()
+            local character = Player.Character
+            if not character then return end
+            
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
                 end
             end
+        end)
+    end)
+end
+
+function NoclipSystem:disable()
+    self.enabled = false
+    
+    if self.connection then
+        Utils.safeDisconnect(self.connection)
+        self.connection = nil
+    end
+    
+    pcall(function()
+        local character = Player.Character
+        if not character then return end
+        
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+            end
+        end
+    end)
+end
+
+-- ========================================
+-- TELEPORT SYSTEM
+-- ========================================
+
+local TeleportSystem = {}
+
+function TeleportSystem:teleport(cframe)
+    pcall(function()
+        local character = Player.Character
+        if not character then return end
+        
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
+        -- Enable noclip temporarily
+        local wasEnabled = NoclipSystem.enabled
+        if not wasEnabled then
+            NoclipSystem:enable()
+        end
+        
+        hrp.CFrame = cframe
+        
+        -- Restore noclip state
+        task.delay(0.5, function()
+            if not wasEnabled then
+                NoclipSystem:disable()
+            end
+        end)
+    end)
+end
+
+function TeleportSystem:teleportToPlayer(targetRole)
+    pcall(function()
+        local myHRP = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if not myHRP then
             Rayfield:Notify({
-                Title="Speed Lock",
-                Content="✅ Enabled: "..speedCurrent,
-                Duration=3
+                Title = "Teleport",
+                Content = "Character not found",
+                Duration = 3
+            })
+            return
+        end
+        
+        local closest = nil
+        local closestDist = math.huge
+        
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            if player ~= Player and RoleSystem:getRole(player) == targetRole then
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if hrp then
+                    local dist = Utils.getDistance(myHRP.Position, hrp.Position)
+                    if dist < closestDist then
+                        closestDist = dist
+                        closest = {player = player, hrp = hrp}
+                    end
+                end
+            end
+        end
+        
+        if closest then
+            local offset = closest.hrp.CFrame * CFrame.new(0, 0, -5) + Vector3.new(0, 2, 0)
+            self:teleport(offset)
+            
+            Rayfield:Notify({
+                Title = "Teleport",
+                Content = "Teleported to " .. closest.player.Name,
+                Duration = 3
             })
         else
-            if speedTickConn then
-                speedTickConn:Disconnect()
-                speedTickConn = nil
-            end
-            if speedHumanoid and speedHumanoid.Parent then
-                setWalkSpeed(speedHumanoid, 16)
-            end
             Rayfield:Notify({
-                Title="Speed Lock",
-                Content="❌ Disabled",
-                Duration=3
+                Title = "Teleport",
+                Content = "No " .. targetRole .. " found",
+                Duration = 3
+            })
+        end
+    end)
+end
+
+-- ========================================
+-- VISUAL SYSTEM
+-- ========================================
+
+local VisualSystem = {
+    fullbright = false,
+    fullbrightLoop = nil,
+    originalLighting = {}
+}
+
+function VisualSystem:saveOriginalLighting()
+    pcall(function()
+        self.originalLighting = {
+            Brightness = Services.Lighting.Brightness,
+            ClockTime = Services.Lighting.ClockTime,
+            FogEnd = Services.Lighting.FogEnd,
+            GlobalShadows = Services.Lighting.GlobalShadows
+        }
+    end)
+end
+
+function VisualSystem:enableFullbright()
+    self.fullbright = true
+    
+    if self.fullbrightLoop then
+        task.cancel(self.fullbrightLoop)
+    end
+    
+    self.fullbrightLoop = task.spawn(function()
+        while self.fullbright do
+            pcall(function()
+                Services.Lighting.Brightness = 2
+                Services.Lighting.ClockTime = 14
+                Services.Lighting.FogEnd = 100000
+                Services.Lighting.GlobalShadows = false
+            end)
+            task.wait(0.5)
+        end
+    end)
+end
+
+function VisualSystem:disableFullbright()
+    self.fullbright = false
+    
+    if self.fullbrightLoop then
+        task.cancel(self.fullbrightLoop)
+        self.fullbrightLoop = nil
+    end
+    
+    pcall(function()
+        for key, value in pairs(self.originalLighting) do
+            Services.Lighting[key] = value
+        end
+    end)
+end
+
+-- ========================================
+-- WORLD ESP SYSTEM
+-- ========================================
+
+local WorldESP = {
+    enabled = {
+        Generator = false,
+        Hook = false,
+        Gate = false
+    },
+    colors = {
+        Generator = Color3.fromRGB(0, 200, 255),
+        Hook = Color3.fromRGB(255, 50, 50),
+        Gate = Color3.fromRGB(255, 225, 0)
+    },
+    objects = {
+        Generator = {},
+        Hook = {},
+        Gate = {}
+    },
+    updateLoop = nil
+}
+
+function WorldESP:findObjects()
+    pcall(function()
+        local map = Services.Workspace:FindFirstChild("Map") or Services.Workspace:FindFirstChild("Map1")
+        if not map then return end
+        
+        for _, obj in ipairs(map:GetDescendants()) do
+            if obj:IsA("Model") then
+                local name = obj.Name
+                if name == "Generator" or name == "Hook" or name == "Gate" then
+                    if not self.objects[name][obj] then
+                        local part = obj:FindFirstChild("HitBox", true) or obj.PrimaryPart
+                        if Utils.isValidPart(part) then
+                            self.objects[name][obj] = part
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+function WorldESP:createESP(part, name, color)
+    pcall(function()
+        -- Remove old ESP
+        local oldBox = part:FindFirstChild("M20_Box")
+        if oldBox then oldBox:Destroy() end
+        
+        local oldBillboard = part:FindFirstChild("M20_Billboard")
+        if oldBillboard then oldBillboard:Destroy() end
+        
+        -- Create box
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = "M20_Box"
+        box.Adornee = part
+        box.Size = part.Size + Vector3.new(0.5, 0.5, 0.5)
+        box.Color3 = color
+        box.AlwaysOnTop = true
+        box.Transparency = 0.5
+        box.ZIndex = 10
+        box.Parent = part
+        
+        -- Create billboard
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "M20_Billboard"
+        billboard.Adornee = part
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = name
+        label.TextColor3 = color
+        label.TextStrokeTransparency = 0
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 16
+        label.Parent = billboard
+        
+        billboard.Parent = part
+    end)
+end
+
+function WorldESP:removeESP(part)
+    pcall(function()
+        local box = part:FindFirstChild("M20_Box")
+        if box then box:Destroy() end
+        
+        local billboard = part:FindFirstChild("M20_Billboard")
+        if billboard then billboard:Destroy() end
+    end)
+end
+
+function WorldESP:startUpdateLoop()
+    if self.updateLoop then return end
+    
+    self.updateLoop = task.spawn(function()
+        while true do
+            -- Find new objects
+            self:findObjects()
+            
+            -- Update ESP
+            for category, enabled in pairs(self.enabled) do
+                if enabled then
+                    for obj, part in pairs(self.objects[category]) do
+                        if Utils.isAlive(obj) and Utils.isValidPart(part) then
+                            self:createESP(part, category, self.colors[category])
+                        else
+                            self.objects[category][obj] = nil
+                        end
+                    end
+                else
+                    -- Remove ESP when disabled
+                    for obj, part in pairs(self.objects[category]) do
+                        if Utils.isValidPart(part) then
+                            self:removeESP(part)
+                        end
+                        self.objects[category][obj] = nil
+                    end
+                end
+            end
+            
+            task.wait(1)
+        end
+    end)
+end
+
+-- ========================================
+-- UI SETUP - PLAYER TAB
+-- ========================================
+
+Tabs.Player:CreateSection("Movement")
+
+Tabs.Player:CreateToggle({
+    Name = "Speed Lock",
+    CurrentValue = false,
+    Flag = "SpeedLock",
+    Callback = function(value)
+        if value then
+            SpeedSystem:enable()
+            Rayfield:Notify({
+                Title = "Speed Lock",
+                Content = "Enabled at " .. SpeedSystem.speed,
+                Duration = 3
+            })
+        else
+            SpeedSystem:disable()
+            Rayfield:Notify({
+                Title = "Speed Lock",
+                Content = "Disabled",
+                Duration = 3
             })
         end
     end
 })
 
-TabPlayer:CreateSlider({
-    Name="Walk Speed",
-    Range={0, 200},
-    Increment=1,
-    CurrentValue=16,
-    Flag="WalkSpeed",
-    Callback=function(v)
-        speedCurrent = v
-        if speedEnforced and canEnforce() then
-            setWalkSpeed(speedHumanoid, speedCurrent)
+Tabs.Player:CreateSlider({
+    Name = "Walk Speed",
+    Range = {0, 200},
+    Increment = 1,
+    CurrentValue = 16,
+    Flag = "WalkSpeed",
+    Callback = function(value)
+        SpeedSystem:setSpeed(value)
+    end
+})
+
+Tabs.Player:CreateToggle({
+    Name = "Noclip",
+    CurrentValue = false,
+    Flag = "Noclip",
+    Callback = function(value)
+        if value then
+            NoclipSystem:enable()
+        else
+            NoclipSystem:disable()
         end
     end
 })
 
--- ========= NOCLIP =========
-local noclipEnabled = false
-local noclipConn = nil
+Tabs.Player:CreateSection("Teleport")
 
-local function setNoclip(state)
-    pcall(function()
-        if state and not noclipConn then
-            noclipEnabled = true
-            noclipConn = RunService.Stepped:Connect(function()
-                local c = LP.Character
-                if not c then return end
-                for _, part in ipairs(c:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
+Tabs.Player:CreateButton({
+    Name = "Teleport to Killer",
+    Callback = function()
+        TeleportSystem:teleportToPlayer("Killer")
+    end
+})
+
+Tabs.Player:CreateButton({
+    Name = "Teleport to Survivor",
+    Callback = function()
+        TeleportSystem:teleportToPlayer("Survivor")
+    end
+})
+
+Tabs.Player:CreateSection("Protection")
+
+Tabs.Player:CreateToggle({
+    Name = "Anti-AFK",
+    CurrentValue = false,
+    Flag = "AntiAFK",
+    Callback = function(value)
+        if value then
+            Player.Idled:Connect(function()
+                Services.VirtualUser:CaptureController()
+                Services.VirtualUser:ClickButton2(Vector2.new(0, 0))
             end)
-        elseif not state and noclipConn then
-            noclipEnabled = false
-            noclipConn:Disconnect()
-            noclipConn = nil
         end
-    end)
-end
+    end
+})
 
-TabPlayer:CreateToggle({
-    Name="Noclip",
-    CurrentValue=false,
-    Flag="Noclip",
-    Callback=function(s)
-        setNoclip(s)
+-- ========================================
+-- UI SETUP - ESP TAB
+-- ========================================
+
+Tabs.ESP:CreateSection("Player ESP")
+
+Tabs.ESP:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Flag = "PlayerESP",
+    Callback = function(value)
+        ESPSystem.enabled = value
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            ESPSystem:updatePlayer(player)
+        end
+        
         Rayfield:Notify({
-            Title="Noclip",
-            Content=s and "✅ Active" or "❌ Off",
-            Duration=2
+            Title = "Player ESP",
+            Content = value and "Enabled" or "Disabled",
+            Duration = 3
         })
     end
 })
 
--- ========= TELEPORTS =========
-TabPlayer:CreateSection("🚀 Teleportation")
-
-local function tpCFrame(cf)
-    pcall(function()
-        local char = LP.Character
-        if not (char and char.Parent) then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        
-        local was = noclipEnabled
-        setNoclip(true)
-        hrp.CFrame = cf
-        task.delay(0.5, function()
-            if not was then setNoclip(false) end
-        end)
-    end)
-end
-
-local function teleportToNearest(role)
-    pcall(function()
-        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        
-        local best, bp, bd = nil, nil, math.huge
-        for _, pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LP and getRole(pl) == role then
-                local ch = pl.Character
-                local h = ch and ch:FindFirstChild("HumanoidRootPart")
-                if h then
-                    local d = dist(h.Position, hrp.Position)
-                    if d < bd then
-                        bd = d
-                        best = pl
-                        bp = h
-                    end
-                end
-            end
+Tabs.ESP:CreateToggle({
+    Name = "Show Nametags",
+    CurrentValue = false,
+    Flag = "Nametags",
+    Callback = function(value)
+        ESPSystem.nametags = value
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            ESPSystem:updatePlayer(player)
         end
-        
-        if best and bp then
-            local cf = bp.CFrame * CFrame.new(0, 0, -5) + Vector3.new(0, 2, 0)
-            tpCFrame(cf)
-            Rayfield:Notify({
-                Title="Teleport",
-                Content="✅ To "..role..": "..best.Name,
-                Duration=4
-            })
+    end
+})
+
+Tabs.ESP:CreateColorPicker({
+    Name = "Survivor Color",
+    Color = ESPSystem.colors.survivor,
+    Flag = "SurvivorColor",
+    Callback = function(color)
+        ESPSystem.colors.survivor = color
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            ESPSystem:updatePlayer(player)
+        end
+    end
+})
+
+Tabs.ESP:CreateColorPicker({
+    Name = "Killer Color",
+    Color = ESPSystem.colors.killer,
+    Flag = "KillerColor",
+    Callback = function(color)
+        ESPSystem.colors.killer = color
+        for _, player in ipairs(Services.Players:GetPlayers()) do
+            ESPSystem:updatePlayer(player)
+        end
+    end
+})
+
+-- ========================================
+-- UI SETUP - WORLD TAB
+-- ========================================
+
+Tabs.World:CreateSection("Object ESP")
+
+Tabs.World:CreateToggle({
+    Name = "Generator ESP",
+    CurrentValue = false,
+    Flag = "GenESP",
+    Callback = function(value)
+        WorldESP.enabled.Generator = value
+    end
+})
+
+Tabs.World:CreateToggle({
+    Name = "Hook ESP",
+    CurrentValue = false,
+    Flag = "HookESP",
+    Callback = function(value)
+        WorldESP.enabled.Hook = value
+    end
+})
+
+Tabs.World:CreateToggle({
+    Name = "Gate ESP",
+    CurrentValue = false,
+    Flag = "GateESP",
+    Callback = function(value)
+        WorldESP.enabled.Gate = value
+    end
+})
+
+-- ========================================
+-- UI SETUP - VISUAL TAB
+-- ========================================
+
+Tabs.Visual:CreateSection("Lighting")
+
+Tabs.Visual:CreateToggle({
+    Name = "Fullbright",
+    CurrentValue = false,
+    Flag = "Fullbright",
+    Callback = function(value)
+        if value then
+            VisualSystem:enableFullbright()
         else
-            Rayfield:Notify({
-                Title="Teleport",
-                Content="❌ No "..role.." found",
-                Duration=4
-            })
-        end
-    end)
-end
-
-TabPlayer:CreateButton({
-    Name="⚠️ TP to Killer",
-    Callback=function()
-        teleportToNearest("Killer")
-    end
-})
-
-TabPlayer:CreateButton({
-    Name="✅ TP to Survivor",
-    Callback=function()
-        teleportToNearest("Survivor")
-    end
-})
-
--- ========= VISUAL FX =========
-local fullbrightEnabled = false
-local fbLoop = nil
-
-TabVisual:CreateSection("💡 Lighting")
-
-TabVisual:CreateToggle({
-    Name="Fullbright",
-    CurrentValue=false,
-    Flag="Fullbright",
-    Callback=function(s)
-        fullbrightEnabled = s
-        if fbLoop then task.cancel(fbLoop) fbLoop = nil end
-        
-        if s then
-            fbLoop = task.spawn(function()
-                while fullbrightEnabled do
-                    pcall(function()
-                        Lighting.Brightness = 3
-                        Lighting.ClockTime = 14
-                        Lighting.FogEnd = 1e9
-                        Lighting.GlobalShadows = false
-                    end)
-                    task.wait(0.5)
-                end
-            end)
+            VisualSystem:disableFullbright()
         end
     end
 })
 
-TabVisual:CreateToggle({
-    Name="No Fog",
-    CurrentValue=false,
-    Flag="NoFog",
-    Callback=function(s)
+Tabs.Visual:CreateToggle({
+    Name = "No Fog",
+    CurrentValue = false,
+    Flag = "NoFog",
+    Callback = function(value)
         pcall(function()
-            Lighting.FogEnd = s and 1e9 or 100000
+            Services.Lighting.FogEnd = value and 100000 or VisualSystem.originalLighting.FogEnd
         end)
     end
 })
 
--- ========= ANTI AFK =========
-TabPlayer:CreateSection("🛡️ Protection")
+-- ========================================
+-- UI SETUP - MISC TAB
+-- ========================================
 
-local antiAFKConn = nil
+Tabs.Misc:CreateSection("Information")
 
-TabPlayer:CreateToggle({
-    Name="Anti-AFK",
-    CurrentValue=false,
-    Flag="AntiAFK",
-    Callback=function(s)
+Tabs.Misc:CreateParagraph({
+    Title = "M20 Project",
+    Content = "Violence District Suite\nVersion 5.0\n\nComplete rewrite with proper error handling\nAll systems operational"
+})
+
+Tabs.Misc:CreateButton({
+    Name = "Reload Config",
+    Callback = function()
         pcall(function()
-            if s and not antiAFKConn then
-                antiAFKConn = LP.Idled:Connect(function()
-                    VirtualUser:CaptureController()
-                    VirtualUser:ClickButton2(Vector2.new(0, 0))
-                end)
-            elseif not s and antiAFKConn then
-                antiAFKConn:Disconnect()
-                antiAFKConn = nil
-            end
+            Rayfield:LoadConfiguration()
         end)
+        Rayfield:Notify({
+            Title = "Config",
+            Content = "Configuration reloaded",
+            Duration = 3
+        })
     end
 })
 
--- ========= MISC =========
-TabMisc:CreateSection("ℹ️ About")
+-- ========================================
+-- CHARACTER SETUP
+-- ========================================
 
-TabMisc:CreateParagraph({
-    Title="⚡ NexusX Hub ULTRA",
-    Content="Premium Edition v4.0 Fixed\n\nAll errors resolved!\n\nFeatures:\n• Advanced ESP\n• Smart Detection\n• Visual Effects\n• Stable Movement"
-})
-
--- ========= CHARACTER SETUP =========
-local function onCharacterAdded(char)
+local function onCharacterAdded(character)
     task.wait(0.5)
     pcall(function()
-        local h = char:FindFirstChildWhichIsA("Humanoid")
-        if h then bindHumanoid(h) end
-        if noclipEnabled then setNoclip(true) end
+        local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+        if humanoid then
+            SpeedSystem:bindHumanoid(humanoid)
+        end
+        
+        if NoclipSystem.enabled then
+            NoclipSystem:enable()
+        end
     end)
 end
 
-if LP.Character then
-    onCharacterAdded(LP.Character)
+if Player.Character then
+    onCharacterAdded(Player.Character)
 end
 
-LP.CharacterAdded:Connect(onCharacterAdded)
+Player.CharacterAdded:Connect(onCharacterAdded)
 
--- ========= FINALIZE =========
+-- ========================================
+-- INITIALIZATION
+-- ========================================
+
+-- Save original lighting
+VisualSystem:saveOriginalLighting()
+
+-- Initialize ESP
+ESPSystem:initialize()
+
+-- Start world ESP loop
+WorldESP:startUpdateLoop()
+
+-- Load config
 pcall(function()
     Rayfield:LoadConfiguration()
 end)
 
+-- Show loaded notification
 Rayfield:Notify({
-    Title="⚡ NexusX Hub",
-    Content="✅ Loaded Successfully!\nv4.0 Fixed Edition",
-    Duration=6
+    Title = "M20 Project",
+    Content = "Loaded successfully!\nVersion 5.0",
+    Duration = 6
 })
 
-print("=====================================")
-print("⚡ NexusX Hub - Premium Edition")
-print("Version: 4.0 FIXED")
-print("Status: ✅ NO ERRORS")
-print("=====================================")
+print("================================================")
+print("M20 Project - Violence District Suite")
+print("Version: 5.0 Complete Rewrite")
+print("Status: All Systems Operational")
+print("================================================")
+print("Features:")
+print("• Player ESP with Highlights")
+print("• World Object ESP")
+print("• Speed Lock System")
+print("• Noclip")
+print("• Teleportation")
+print("• Visual Enhancements")
+print("• Anti-AFK")
+print("================================================")
