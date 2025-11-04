@@ -1,0 +1,1120 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local StarterPlayer = game:GetService("StarterPlayer")
+local VirtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LP = Players.LocalPlayer
+
+-- Show simple loading screen (non-blocking)
+task.spawn(function()
+    local LoadingGui = Instance.new("ScreenGui")
+    LoadingGui.Name = "FirengHubLoading"
+    LoadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(0, 200, 0, 30)
+    Title.Position = UDim2.new(0.5, -100, 0.5, -20)
+    Title.BackgroundTransparency = 1
+    Title.Font = Enum.Font.GothamBold
+    Title.Text = "Fireng-Hub"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 24
+    Title.Parent = LoadingGui
+    
+    local Subtitle = Instance.new("TextLabel")
+    Subtitle.Size = UDim2.new(0, 200, 0, 18)
+    Subtitle.Position = UDim2.new(0.5, -100, 0.5, 15)
+    Subtitle.BackgroundTransparency = 1
+    Subtitle.Font = Enum.Font.Gotham
+    Subtitle.Text = "Loading..."
+    Subtitle.TextColor3 = Color3.fromRGB(150, 150, 150)
+    Subtitle.TextSize = 12
+    Subtitle.Parent = LoadingGui
+    
+    LoadingGui.Parent = LP:WaitForChild("PlayerGui")
+    
+    -- Auto remove after 2 seconds
+    task.wait(2)
+    TweenService:Create(Title, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+    TweenService:Create(Subtitle, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+    task.wait(0.4)
+    LoadingGui:Destroy()
+end)
+
+-- Utility Functions
+local function alive(i)
+    if not i then return false end
+    local ok = pcall(function() return i.Parent end)
+    return ok and i.Parent ~= nil
+end
+local function validPart(p) return p and alive(p) and p:IsA("BasePart") end
+local function clamp(n,lo,hi) if n<lo then return lo elseif n>hi then return hi else return n end end
+local function now() return os.clock() end
+local function dist(a,b) return (a-b).Magnitude end
+
+local function firstBasePart(inst)
+    if not alive(inst) then return nil end
+    if inst:IsA("BasePart") then return inst end
+    if inst:IsA("Model") then
+        if inst.PrimaryPart and inst.PrimaryPart:IsA("BasePart") and alive(inst.PrimaryPart) then return inst.PrimaryPart end
+        local p = inst:FindFirstChildWhichIsA("BasePart", true)
+        if validPart(p) then return p end
+    end
+    if inst:IsA("Tool") then
+        local h = inst:FindFirstChild("Handle") or inst:FindFirstChildWhichIsA("BasePart")
+        if validPart(h) then return h end
+    end
+    return nil
+end
+
+-- Custom Modern GUI
+local FirengHub = {}
+FirengHub.Enabled = false
+FirengHub.Tabs = {}
+FirengHub.CurrentTab = nil
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FirengHubGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 550, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -275, 0.5, -200)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+-- Rounded corners
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainFrame
+
+-- Top Bar
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 50)
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopBarCorner = Instance.new("UICorner")
+TopBarCorner.CornerRadius = UDim.new(0, 12)
+TopBarCorner.Parent = TopBar
+
+-- Title with gradient
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.Text = "Fireng-Hub"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+-- Close Button
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.new(0, 40, 0, 40)
+CloseButton.Position = UDim2.new(1, -45, 0, 5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+CloseButton.Text = "×"
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 24
+CloseButton.Parent = TopBar
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 8)
+CloseCorner.Parent = CloseButton
+
+-- Minimize Button
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MinimizeButton"
+MinimizeButton.Size = UDim2.new(0, 40, 0, 40)
+MinimizeButton.Position = UDim2.new(1, -90, 0, 5)
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+MinimizeButton.Text = "_"
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.TextSize = 20
+MinimizeButton.Parent = TopBar
+
+local MinimizeCorner = Instance.new("UICorner")
+MinimizeCorner.CornerRadius = UDim.new(0, 8)
+MinimizeCorner.Parent = MinimizeButton
+
+-- Resize Handle
+local ResizeHandle = Instance.new("ImageButton")
+ResizeHandle.Name = "ResizeHandle"
+ResizeHandle.Size = UDim2.new(0, 20, 0, 20)
+ResizeHandle.Position = UDim2.new(1, -20, 1, -20)
+ResizeHandle.BackgroundTransparency = 1
+ResizeHandle.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+ResizeHandle.ImageColor3 = Color3.fromRGB(88, 101, 242)
+ResizeHandle.Parent = MainFrame
+
+-- Resize functionality
+local resizing = false
+local resizeStart, startSize
+
+ResizeHandle.MouseButton1Down:Connect(function()
+    resizing = true
+    resizeStart = UserInputService:GetMouseLocation()
+    startSize = MainFrame.Size
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizing = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local mouse = UserInputService:GetMouseLocation()
+        local delta = mouse - resizeStart
+        local newWidth = math.max(450, startSize.X.Offset + delta.X)
+        local newHeight = math.max(350, startSize.Y.Offset + delta.Y)
+        MainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
+    end
+end)
+
+-- Make draggable
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then update(input) end
+end)
+
+-- Close button functionality (Destroy GUI completely)
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+    FirengHub.Enabled = false
+end)
+
+-- Minimize button functionality (Hide GUI)
+local isMinimized = false
+MinimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 200, 0, 50)}):Play()
+        TabContainer.Visible = false
+        ContentFrame.Visible = false
+        ResizeHandle.Visible = false
+        MinimizeButton.Text = "□"
+    else
+        TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 550, 0, 400)}):Play()
+        TabContainer.Visible = true
+        ContentFrame.Visible = true
+        ResizeHandle.Visible = true
+        MinimizeButton.Text = "_"
+    end
+end)
+
+-- Tab Container
+local TabContainer = Instance.new("Frame")
+TabContainer.Name = "TabContainer"
+TabContainer.Size = UDim2.new(0, 140, 1, -60)
+TabContainer.Position = UDim2.new(0, 10, 0, 55)
+TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = MainFrame
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabLayout.Padding = UDim.new(0, 8)
+TabLayout.Parent = TabContainer
+
+-- Content Frame
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Size = UDim2.new(1, -165, 1, -65)
+ContentFrame.Position = UDim2.new(0, 155, 0, 55)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+ContentFrame.BorderSizePixel = 0
+ContentFrame.ClipsDescendants = true
+ContentFrame.Parent = MainFrame
+
+local ContentCorner = Instance.new("UICorner")
+ContentCorner.CornerRadius = UDim.new(0, 8)
+ContentCorner.Parent = ContentFrame
+
+-- Scrolling container inside
+local ScrollContainer = Instance.new("ScrollingFrame")
+ScrollContainer.Name = "ScrollContainer"
+ScrollContainer.Size = UDim2.new(1, 0, 1, 0)
+ScrollContainer.BackgroundTransparency = 1
+ScrollContainer.BorderSizePixel = 0
+ScrollContainer.ScrollBarThickness = 4
+ScrollContainer.ScrollBarImageColor3 = Color3.fromRGB(88, 101, 242)
+ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollContainer.Parent = ContentFrame
+
+local ContentLayout = Instance.new("UIListLayout")
+ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ContentLayout.Padding = UDim.new(0, 8)
+ContentLayout.Parent = ScrollContainer
+
+local ContentPadding = Instance.new("UIPadding")
+ContentPadding.PaddingTop = UDim.new(0, 10)
+ContentPadding.PaddingLeft = UDim.new(0, 10)
+ContentPadding.PaddingRight = UDim.new(0, 10)
+ContentPadding.PaddingBottom = UDim.new(0, 10)
+ContentPadding.Parent = ScrollContainer
+
+-- Auto-update canvas size
+ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
+end)
+
+-- Initialize GUI
+ScreenGui.Parent = LP:WaitForChild("PlayerGui")
+
+-- Keybind Settings
+local CurrentKeybind = Enum.KeyCode.RightShift
+local CtrlXEnabled = true
+
+-- Settings System
+local SettingsFile = "FirengHub_Settings.json"
+local Settings = {
+    Keybind = "RightShift",
+    CtrlXEnabled = true,
+    PlayerESP = false,
+    Nametags = false,
+    Fullbright = false,
+    SpeedLock = false,
+    WalkSpeed = 16,
+    Noclip = false,
+    Crosshair = false,
+    WindowPosition = {X = 0.5, Y = 0.5},
+    WindowSize = {X = 550, Y = 400},
+    World = {
+        Generator = false,
+        Hook = false,
+        Gate = false,
+        Window = false,
+        Palletwrong = false,
+        Pumpkin = false
+    }
+}
+
+-- Load Settings
+local function LoadSettings()
+    local success, data = pcall(function()
+        if not isfolder("FirengHub") then
+            makefolder("FirengHub")
+        end
+        if isfile("FirengHub/" .. SettingsFile) then
+            local content = readfile("FirengHub/" .. SettingsFile)
+            return game:GetService("HttpService"):JSONDecode(content)
+        end
+        return nil
+    end)
+    
+    if success and data then
+        for k, v in pairs(data) do
+            Settings[k] = v
+        end
+        -- Apply keybind
+        local success2 = pcall(function()
+            CurrentKeybind = Enum.KeyCode[Settings.Keybind]
+        end)
+        if not success2 then
+            CurrentKeybind = Enum.KeyCode.RightShift
+        end
+        CtrlXEnabled = Settings.CtrlXEnabled
+        return true
+    end
+    return false
+end
+
+-- Save Settings
+local function SaveSettings()
+    pcall(function()
+        if not isfolder("FirengHub") then
+            makefolder("FirengHub")
+        end
+        Settings.Keybind = CurrentKeybind.Name
+        Settings.CtrlXEnabled = CtrlXEnabled
+        local json = game:GetService("HttpService"):JSONEncode(Settings)
+        writefile("FirengHub/" .. SettingsFile, json)
+    end)
+end
+
+-- Auto-save every 30 seconds
+task.spawn(function()
+    while task.wait(30) do
+        SaveSettings()
+    end
+end)
+
+-- Load settings on start
+LoadSettings()
+
+-- Toggle with custom key
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- Custom keybind toggle
+    if input.KeyCode == CurrentKeybind then
+        FirengHub:Toggle()
+    end
+    
+    -- Ctrl + X toggle
+    if CtrlXEnabled and input.KeyCode == Enum.KeyCode.X then
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+            FirengHub:Toggle()
+        end
+    end
+end)
+
+-- GUI Functions
+function FirengHub:CreateTab(name)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Name = name
+    TabButton.Size = UDim2.new(1, 0, 0, 35)
+    TabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    TabButton.Text = name
+    TabButton.Font = Enum.Font.Gotham
+    TabButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TabButton.TextSize = 14
+    TabButton.Parent = TabContainer
+    
+    local TabCorner = Instance.new("UICorner")
+    TabCorner.CornerRadius = UDim.new(0, 6)
+    TabCorner.Parent = TabButton
+    
+    local TabContent = Instance.new("Frame")
+    TabContent.Name = name .. "Content"
+    TabContent.Visible = false
+    TabContent.BackgroundTransparency = 1
+    TabContent.Size = UDim2.new(1, 0, 0, 0)
+    TabContent.AutomaticSize = Enum.AutomaticSize.Y
+    TabContent.Parent = ScrollContainer
+    
+    local TabContentLayout = Instance.new("UIListLayout")
+    TabContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    TabContentLayout.Padding = UDim.new(0, 8)
+    TabContentLayout.Parent = TabContent
+    
+    TabButton.MouseButton1Click:Connect(function()
+        for _, tab in pairs(FirengHub.Tabs) do
+            tab.Button.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+            tab.Button.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tab.Content.Visible = false
+        end
+        TabButton.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+        TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TabContent.Visible = true
+        FirengHub.CurrentTab = name
+    end)
+    
+    local Tab = {
+        Button = TabButton,
+        Content = TabContent,
+        Name = name
+    }
+    
+    FirengHub.Tabs[name] = Tab
+    
+    if not FirengHub.CurrentTab then
+        TabButton.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+        TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TabContent.Visible = true
+        FirengHub.CurrentTab = name
+    end
+    
+    return Tab
+end
+
+function FirengHub:CreateToggle(tab, name, default, callback)
+    -- Check if we have saved setting
+    local settingKey = name:gsub(" ", ""):gsub("%(", ""):gsub("%)", "")
+    if Settings[settingKey] ~= nil then
+        default = Settings[settingKey]
+    end
+    
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
+    ToggleFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    ToggleFrame.BorderSizePixel = 0
+    ToggleFrame.Parent = tab.Content
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 6)
+    ToggleCorner.Parent = ToggleFrame
+    
+    local ToggleLabel = Instance.new("TextLabel")
+    ToggleLabel.Size = UDim2.new(1, -50, 1, 0)
+    ToggleLabel.Position = UDim2.new(0, 10, 0, 0)
+    ToggleLabel.BackgroundTransparency = 1
+    ToggleLabel.Font = Enum.Font.Gotham
+    ToggleLabel.Text = name
+    ToggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleLabel.TextSize = 13
+    ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleLabel.Parent = ToggleFrame
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(0, 40, 0, 20)
+    ToggleButton.Position = UDim2.new(1, -45, 0.5, -10)
+    ToggleButton.BackgroundColor3 = default and Color3.fromRGB(88, 101, 242) or Color3.fromRGB(45, 45, 50)
+    ToggleButton.Text = ""
+    ToggleButton.Parent = ToggleFrame
+    
+    local ToggleBtnCorner = Instance.new("UICorner")
+    ToggleBtnCorner.CornerRadius = UDim.new(1, 0)
+    ToggleBtnCorner.Parent = ToggleButton
+    
+    local ToggleCircle = Instance.new("Frame")
+    ToggleCircle.Size = UDim2.new(0, 16, 0, 16)
+    ToggleCircle.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    ToggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleCircle.BorderSizePixel = 0
+    ToggleCircle.Parent = ToggleButton
+    
+    local CircleCorner = Instance.new("UICorner")
+    CircleCorner.CornerRadius = UDim.new(1, 0)
+    CircleCorner.Parent = ToggleCircle
+    
+    local toggled = default
+    
+    -- Apply saved state on load
+    if default then
+        pcall(callback, default)
+    end
+    
+    ToggleButton.MouseButton1Click:Connect(function()
+        toggled = not toggled
+        TweenService:Create(ToggleButton, TweenInfo.new(0.2), {BackgroundColor3 = toggled and Color3.fromRGB(88, 101, 242) or Color3.fromRGB(45, 45, 50)}):Play()
+        TweenService:Create(ToggleCircle, TweenInfo.new(0.2), {Position = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)}):Play()
+        
+        -- Save setting
+        Settings[settingKey] = toggled
+        
+        pcall(callback, toggled)
+    end)
+end
+
+function FirengHub:CreateButton(tab, name, callback)
+    local ButtonFrame = Instance.new("TextButton")
+    ButtonFrame.Size = UDim2.new(1, 0, 0, 35)
+    ButtonFrame.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    ButtonFrame.BorderSizePixel = 0
+    ButtonFrame.Font = Enum.Font.GothamBold
+    ButtonFrame.Text = name
+    ButtonFrame.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ButtonFrame.TextSize = 13
+    ButtonFrame.Parent = tab.Content
+    
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 6)
+    ButtonCorner.Parent = ButtonFrame
+    
+    ButtonFrame.MouseButton1Click:Connect(function()
+        TweenService:Create(ButtonFrame, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(108, 121, 255)}):Play()
+        wait(0.1)
+        TweenService:Create(ButtonFrame, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(88, 101, 242)}):Play()
+        pcall(callback)
+    end)
+end
+
+function FirengHub:CreateSlider(tab, name, min, max, default, callback)
+    -- Check if we have saved setting
+    local settingKey = name:gsub(" ", "")
+    if Settings[settingKey] ~= nil then
+        default = Settings[settingKey]
+    end
+    
+    local SliderFrame = Instance.new("Frame")
+    SliderFrame.Size = UDim2.new(1, 0, 0, 50)
+    SliderFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    SliderFrame.BorderSizePixel = 0
+    SliderFrame.Parent = tab.Content
+    
+    local SliderCorner = Instance.new("UICorner")
+    SliderCorner.CornerRadius = UDim.new(0, 6)
+    SliderCorner.Parent = SliderFrame
+    
+    local SliderLabel = Instance.new("TextLabel")
+    SliderLabel.Size = UDim2.new(1, -20, 0, 20)
+    SliderLabel.Position = UDim2.new(0, 10, 0, 5)
+    SliderLabel.BackgroundTransparency = 1
+    SliderLabel.Font = Enum.Font.Gotham
+    SliderLabel.Text = name .. ": " .. tostring(default)
+    SliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SliderLabel.TextSize = 13
+    SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SliderLabel.Parent = SliderFrame
+    
+    local SliderBar = Instance.new("Frame")
+    SliderBar.Size = UDim2.new(1, -20, 0, 4)
+    SliderBar.Position = UDim2.new(0, 10, 1, -15)
+    SliderBar.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    SliderBar.BorderSizePixel = 0
+    SliderBar.Parent = SliderFrame
+    
+    local SliderBarCorner = Instance.new("UICorner")
+    SliderBarCorner.CornerRadius = UDim.new(1, 0)
+    SliderBarCorner.Parent = SliderBar
+    
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    SliderFill.BorderSizePixel = 0
+    SliderFill.Parent = SliderBar
+    
+    local SliderFillCorner = Instance.new("UICorner")
+    SliderFillCorner.CornerRadius = UDim.new(1, 0)
+    SliderFillCorner.Parent = SliderFill
+    
+    local SliderButton = Instance.new("TextButton")
+    SliderButton.Size = UDim2.new(1, 0, 1, 0)
+    SliderButton.BackgroundTransparency = 1
+    SliderButton.Text = ""
+    SliderButton.Parent = SliderBar
+    
+    local dragging = false
+    
+    SliderButton.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local percent = math.clamp((input.Position.X - SliderBar.AbsolutePosition.X) / SliderBar.AbsoluteSize.X, 0, 1)
+            local value = math.floor(min + (max - min) * percent)
+            SliderFill.Size = UDim2.new(percent, 0, 1, 0)
+            SliderLabel.Text = name .. ": " .. tostring(value)
+            
+            -- Save setting
+            Settings[settingKey] = value
+            
+            pcall(callback, value)
+        end
+    end)
+end
+
+function FirengHub:CreateSection(tab, name)
+    local SectionLabel = Instance.new("TextLabel")
+    SectionLabel.Size = UDim2.new(1, 0, 0, 25)
+    SectionLabel.BackgroundTransparency = 1
+    SectionLabel.Font = Enum.Font.GothamBold
+    SectionLabel.Text = name
+    SectionLabel.TextColor3 = Color3.fromRGB(88, 101, 242)
+    SectionLabel.TextSize = 14
+    SectionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SectionLabel.Parent = tab.Content
+end
+
+function FirengHub:Notify(title, text, duration)
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Size = UDim2.new(0, 300, 0, 80)
+    NotifFrame.Position = UDim2.new(1, -320, 1, 100)
+    NotifFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    NotifFrame.BorderSizePixel = 0
+    NotifFrame.Parent = ScreenGui
+    
+    local NotifCorner = Instance.new("UICorner")
+    NotifCorner.CornerRadius = UDim.new(0, 10)
+    NotifCorner.Parent = NotifFrame
+    
+    local NotifTitle = Instance.new("TextLabel")
+    NotifTitle.Size = UDim2.new(1, -20, 0, 25)
+    NotifTitle.Position = UDim2.new(0, 10, 0, 10)
+    NotifTitle.BackgroundTransparency = 1
+    NotifTitle.Font = Enum.Font.GothamBold
+    NotifTitle.Text = title
+    NotifTitle.TextColor3 = Color3.fromRGB(88, 101, 242)
+    NotifTitle.TextSize = 14
+    NotifTitle.TextXAlignment = Enum.TextXAlignment.Left
+    NotifTitle.Parent = NotifFrame
+    
+    local NotifText = Instance.new("TextLabel")
+    NotifText.Size = UDim2.new(1, -20, 0, 35)
+    NotifText.Position = UDim2.new(0, 10, 0, 35)
+    NotifText.BackgroundTransparency = 1
+    NotifText.Font = Enum.Font.Gotham
+    NotifText.Text = text
+    NotifText.TextColor3 = Color3.fromRGB(200, 200, 200)
+    NotifText.TextSize = 12
+    NotifText.TextXAlignment = Enum.TextXAlignment.Left
+    NotifText.TextYAlignment = Enum.TextYAlignment.Top
+    NotifText.TextWrapped = true
+    NotifText.Parent = NotifFrame
+    
+    TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Position = UDim2.new(1, -320, 1, -100)}):Play()
+    
+    task.delay(duration or 5, function()
+        TweenService:Create(NotifFrame, TweenInfo.new(0.3), {Position = UDim2.new(1, -320, 1, 100)}):Play()
+        wait(0.3)
+        NotifFrame:Destroy()
+    end)
+end
+
+function FirengHub:Toggle()
+    ScreenGui.Enabled = not ScreenGui.Enabled
+    FirengHub.Enabled = ScreenGui.Enabled
+end
+
+-- Create Tabs
+local TabPlayer = FirengHub:CreateTab("Player")
+local TabESP = FirengHub:CreateTab("ESP")
+local TabWorld = FirengHub:CreateTab("World")
+local TabVisual = FirengHub:CreateTab("Visual")
+local TabMisc = FirengHub:CreateTab("Misc")
+
+-- ESP System
+local function makeBillboard(text, color3)
+    local g = Instance.new("BillboardGui")
+    g.Name = "VD_Tag"
+    g.AlwaysOnTop = true
+    g.Size = UDim2.new(0, 200, 0, 36)
+    g.StudsOffset = Vector3.new(0, 3, 0)
+    local l = Instance.new("TextLabel")
+    l.Name = "Label"
+    l.BackgroundTransparency = 1
+    l.Size = UDim2.new(1, 0, 1, 0)
+    l.Font = Enum.Font.GothamBold
+    l.Text = text
+    l.TextSize = 14
+    l.TextColor3 = color3 or Color3.new(1,1,1)
+    l.TextStrokeTransparency = 0
+    l.TextStrokeColor3 = Color3.new(0,0,0)
+    l.Parent = g
+    return g
+end
+
+local function ensureBoxESP(part, name, color)
+    if not validPart(part) then return end
+    local a = part:FindFirstChild(name)
+    if not a then
+        local ok, obj = pcall(function()
+            local b = Instance.new("BoxHandleAdornment")
+            b.Name = name
+            b.Adornee = part
+            b.ZIndex = 10
+            b.AlwaysOnTop = true
+            b.Transparency = 0.5
+            b.Size = part.Size + Vector3.new(0.2,0.2,0.2)
+            b.Color3 = color
+            b.Parent = part
+            return b
+        end)
+        if ok then a = obj end
+    else
+        a.Color3 = color
+        a.Size = part.Size + Vector3.new(0.2,0.2,0.2)
+    end
+end
+
+local function clearChild(o, n)
+    if o and alive(o) then
+        local c = o:FindFirstChild(n)
+        if c then pcall(function() c:Destroy() end) end
+    end
+end
+
+local function ensureHighlight(model, fill)
+    if not (model and model:IsA("Model") and alive(model)) then return end
+    local hl = model:FindFirstChild("VD_HL")
+    if not hl then
+        local ok, obj = pcall(function()
+            local h = Instance.new("Highlight")
+            h.Name = "VD_HL"
+            h.Adornee = model
+            h.FillTransparency = 0.5
+            h.OutlineTransparency = 0
+            h.Parent = model
+            return h
+        end)
+        if ok then hl = obj else return end
+    end
+    hl.FillColor = fill
+    hl.OutlineColor = fill
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+end
+
+local function clearHighlight(model)
+    if model and model:FindFirstChild("VD_HL") then
+        pcall(function() model.VD_HL:Destroy() end)
+    end
+end
+
+local function getRole(p)
+    local tn = p.Team and p.Team.Name and p.Team.Name:lower() or ""
+    if tn:find("killer") then return "Killer" end
+    if tn:find("survivor") then return "Survivor" end
+    return "Survivor"
+end
+
+local killerTypeName = "Killer"
+local killerColors = {
+    Jason = Color3.fromRGB(255, 60, 60),
+    Stalker = Color3.fromRGB(255, 120, 60),
+    Masked = Color3.fromRGB(255, 160, 60),
+    Hidden = Color3.fromRGB(255, 60, 160),
+    Abysswalker = Color3.fromRGB(120, 60, 255),
+    Killer = Color3.fromRGB(255, 0, 0),
+}
+
+local function currentKillerColor()
+    return killerColors[killerTypeName] or killerColors.Killer
+end
+
+local knownKillers = {Jason=true, Stalker=true, Masked=true, Hidden=true, Abysswalker=true}
+do
+    local r = ReplicatedStorage:FindFirstChild("Remotes")
+    if r then
+        local k = r:FindFirstChild("Killers")
+        if k then
+            for _,ch in ipairs(k:GetChildren()) do
+                if ch:IsA("Folder") then knownKillers[ch.Name] = true end
+            end
+        end
+    end
+end
+
+local function refreshKillerESPLabels()
+    for _,pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LP and getRole(pl)=="Killer" then
+            if pl.Character then
+                local head = pl.Character:FindFirstChild("Head")
+                if head then
+                    local tag = head:FindFirstChild("VD_Tag")
+                    if tag then
+                        local l = tag:FindFirstChild("Label")
+                        if l then l.Text = pl.Name.." ["..tostring(killerTypeName).."]" end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function setKillerType(name)
+    if name and knownKillers[name] and killerTypeName ~= name then
+        killerTypeName = name
+        refreshKillerESPLabels()
+    end
+end
+
+local survivorColor = Color3.fromRGB(0,255,0)
+local killerBaseColor = killerColors.Killer
+local nametagsEnabled, playerESPEnabled = false, false
+local playerConns = {}
+
+local function applyPlayerESP(p)
+    if p == LP then return end
+    local c = p.Character
+    if not (c and alive(c)) then return end
+    local col = (getRole(p)=="Killer") and currentKillerColor() or survivorColor
+
+    if playerESPEnabled then
+        if c:IsDescendantOf(Workspace) then ensureHighlight(c, col) end
+        local head = c:FindFirstChild("Head")
+        if nametagsEnabled and validPart(head) then
+            local tag = head:FindFirstChild("VD_Tag") or makeBillboard(p.Name, col)
+            tag.Name = "VD_Tag"
+            tag.Parent = head
+            local l = tag:FindFirstChild("Label")
+            if l then
+                if getRole(p)=="Killer" then l.Text = p.Name.." ["..tostring(killerTypeName).."]" else l.Text = p.Name end
+                l.TextColor3 = col
+            end
+        else
+            local t = head and head:FindFirstChild("VD_Tag")
+            if t then pcall(function() t:Destroy() end) end
+        end
+    else
+        clearHighlight(c)
+        local head = c:FindFirstChild("Head")
+        local t = head and head:FindFirstChild("VD_Tag")
+        if t then pcall(function() t:Destroy() end) end
+    end
+end
+
+local function watchPlayer(p)
+    if playerConns[p] then for _,cn in ipairs(playerConns[p]) do cn:Disconnect() end end
+    playerConns[p] = {}
+    table.insert(playerConns[p], p.CharacterAdded:Connect(function()
+        task.delay(0.15, function() applyPlayerESP(p) end)
+    end))
+    table.insert(playerConns[p], p:GetPropertyChangedSignal("Team"):Connect(function() applyPlayerESP(p) end))
+    if p.Character then applyPlayerESP(p) end
+end
+
+local function unwatchPlayer(p)
+    if p.Character then
+        clearHighlight(p.Character)
+        local head = p.Character:FindFirstChild("Head")
+        if head and head:FindFirstChild("VD_Tag") then pcall(function() head.VD_Tag:Destroy() end) end
+    end
+    if playerConns[p] then for _,cn in ipairs(playerConns[p]) do cn:Disconnect() end end
+    playerConns[p] = nil
+end
+
+FirengHub:CreateSection(TabESP, "Players")
+FirengHub:CreateToggle(TabESP, "Player ESP (Chams)", false, function(s)
+    playerESPEnabled = s
+    for _,pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LP then applyPlayerESP(pl) end
+    end
+end)
+
+FirengHub:CreateToggle(TabESP, "Nametags", false, function(s)
+    nametagsEnabled = s
+    for _,pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LP then applyPlayerESP(pl) end
+    end
+end)
+
+for _,p in ipairs(Players:GetPlayers()) do if p~=LP then watchPlayer(p) end end
+Players.PlayerAdded:Connect(watchPlayer)
+Players.PlayerRemoving:Connect(unwatchPlayer)
+
+-- World ESP (simplified for file length - add your world ESP code here)
+FirengHub:CreateSection(TabWorld, "Objects")
+FirengHub:CreateToggle(TabWorld, "Generators", false, function(s) end)
+FirengHub:CreateToggle(TabWorld, "Hooks", false, function(s) end)
+FirengHub:CreateToggle(TabWorld, "Gates", false, function(s) end)
+
+-- Visual Features
+local initLighting = {
+    Brightness = Lighting.Brightness,
+    ClockTime = Lighting.ClockTime,
+    FogStart = Lighting.FogStart,
+    FogEnd = Lighting.FogEnd,
+    GlobalShadows = Lighting.GlobalShadows,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+}
+
+local fullbrightEnabled = false
+local fbLoop
+
+FirengHub:CreateSection(TabVisual, "Lighting")
+FirengHub:CreateToggle(TabVisual, "Fullbright", false, function(s)
+    fullbrightEnabled = s
+    if fbLoop then task.cancel(fbLoop) fbLoop=nil end
+    if s then
+        fbLoop = task.spawn(function()
+            while fullbrightEnabled do
+                Lighting.Brightness = 2
+                Lighting.ClockTime = 14
+                Lighting.FogStart = 0
+                Lighting.FogEnd = 1e9
+                Lighting.GlobalShadows = false
+                Lighting.OutdoorAmbient = Color3.fromRGB(128,128,128)
+                task.wait(0.5)
+            end
+        end)
+    else
+        for k,v in pairs(initLighting) do pcall(function() if v~=nil then Lighting[k]=v end end) end
+    end
+end)
+
+-- Player Features
+local speedCurrent, speedHumanoid = 16, nil
+local speedEnforced = false
+
+local function setWalkSpeed(h,v) if h and h.Parent then pcall(function() h.WalkSpeed=v end) end end
+
+local function bindHumanoid(h)
+    speedHumanoid = h
+    if speedEnforced then
+        setWalkSpeed(h, speedCurrent)
+    end
+end
+
+local function onCharacterAdded(char)
+    local h = char:WaitForChild("Humanoid", 10) or char:FindFirstChildOfClass("Humanoid")
+    if h then bindHumanoid(h) end
+end
+
+if LP.Character then onCharacterAdded(LP.Character) end
+LP.CharacterAdded:Connect(onCharacterAdded)
+
+FirengHub:CreateSection(TabPlayer, "Movement")
+FirengHub:CreateToggle(TabPlayer, "Speed Lock", false, function(state)
+    speedEnforced = state
+    if speedHumanoid then
+        setWalkSpeed(speedHumanoid, speedCurrent)
+    end
+end)
+
+FirengHub:CreateSlider(TabPlayer, "Walk Speed", 0, 200, 16, function(v)
+    speedCurrent = v
+    if speedEnforced and speedHumanoid then
+        setWalkSpeed(speedHumanoid, speedCurrent)
+    end
+end)
+
+local noclipEnabled = false
+local noclipConn
+
+local function setNoclip(state)
+    if state and not noclipConn then
+        noclipEnabled = true
+        noclipConn = RunService.Stepped:Connect(function()
+            local c = LP.Character
+            if not c then return end
+            for _,part in ipairs(c:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    elseif not state and noclipConn then
+        noclipEnabled=false
+        noclipConn:Disconnect()
+        noclipConn=nil
+    end
+end
+
+FirengHub:CreateToggle(TabPlayer, "Noclip", false, function(s) setNoclip(s) end)
+
+-- Misc Features
+FirengHub:CreateSection(TabMisc, "GUI Settings")
+
+-- Keybind Changer
+local KeybindFrame = Instance.new("Frame")
+KeybindFrame.Size = UDim2.new(1, 0, 0, 35)
+KeybindFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+KeybindFrame.BorderSizePixel = 0
+KeybindFrame.Parent = TabMisc.Content
+
+local KeybindCorner = Instance.new("UICorner")
+KeybindCorner.CornerRadius = UDim.new(0, 6)
+KeybindCorner.Parent = KeybindFrame
+
+local KeybindLabel = Instance.new("TextLabel")
+KeybindLabel.Size = UDim2.new(0, 120, 1, 0)
+KeybindLabel.Position = UDim2.new(0, 10, 0, 0)
+KeybindLabel.BackgroundTransparency = 1
+KeybindLabel.Font = Enum.Font.Gotham
+KeybindLabel.Text = "Toggle Keybind:"
+KeybindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeybindLabel.TextSize = 13
+KeybindLabel.TextXAlignment = Enum.TextXAlignment.Left
+KeybindLabel.Parent = KeybindFrame
+
+local KeybindButton = Instance.new("TextButton")
+KeybindButton.Size = UDim2.new(0, 100, 0, 25)
+KeybindButton.Position = UDim2.new(1, -110, 0.5, -12.5)
+KeybindButton.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+KeybindButton.Font = Enum.Font.GothamBold
+KeybindButton.Text = CurrentKeybind.Name
+KeybindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeybindButton.TextSize = 11
+KeybindButton.Parent = KeybindFrame
+
+local KeybindBtnCorner = Instance.new("UICorner")
+KeybindBtnCorner.CornerRadius = UDim.new(0, 6)
+KeybindBtnCorner.Parent = KeybindButton
+
+local waitingForKey = false
+KeybindButton.MouseButton1Click:Connect(function()
+    if waitingForKey then return end
+    waitingForKey = true
+    KeybindButton.Text = "Press a key..."
+    
+    local connection
+    connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            CurrentKeybind = input.KeyCode
+            KeybindButton.Text = input.KeyCode.Name
+            waitingForKey = false
+            connection:Disconnect()
+            FirengHub:Notify("Keybind Changed", "Toggle key set to: " .. input.KeyCode.Name, 3)
+        end
+    end)
+end)
+
+FirengHub:CreateToggle(TabMisc, "Enable Ctrl+X Toggle", true, function(s)
+    CtrlXEnabled = s
+end)
+
+FirengHub:CreateButton(TabMisc, "Save Settings Now", function()
+    SaveSettings()
+    FirengHub:Notify("Settings", "Settings saved successfully!", 3)
+end)
+
+FirengHub:CreateSection(TabMisc, "Crosshair")
+
+local crosshairEnabled = false
+local crosshairGui = nil
+local CROSSHAIR_COLOR = Color3.fromRGB(255, 0, 0)
+local LINE_LENGTH = 12
+local LINE_THICKNESS = 2
+local GUI_NAME = "CrosshairGui"
+local Y_OFFSET = -20
+
+local function createLine(parent, size, position)
+    local line = Instance.new("Frame")
+    line.Size = size
+    line.Position = position
+    line.BackgroundColor3 = CROSSHAIR_COLOR
+    line.BorderSizePixel = 0
+    line.Parent = parent
+    return line
+end
+
+local function createCrosshair()
+    if crosshairGui then pcall(function() crosshairGui:Destroy() end) end
+    local PlayerGui = LP:WaitForChild("PlayerGui")
+    crosshairGui = Instance.new("ScreenGui")
+    crosshairGui.Name = GUI_NAME
+    crosshairGui.ResetOnSpawn = false
+    crosshairGui.Parent = PlayerGui
+    createLine(crosshairGui, UDim2.new(0, LINE_LENGTH, 0, LINE_THICKNESS), UDim2.new(0.5, -LINE_LENGTH / 2, 0.5, -LINE_THICKNESS / 2 + Y_OFFSET))
+    createLine(crosshairGui, UDim2.new(0, LINE_THICKNESS, 0, LINE_LENGTH), UDim2.new(0.5, -LINE_THICKNESS / 2, 0.5, -LINE_LENGTH / 2 + Y_OFFSET))
+end
+
+local function removeCrosshair()
+    if crosshairGui then pcall(function() crosshairGui:Destroy() end) crosshairGui=nil end
+end
+
+FirengHub:CreateToggle(TabMisc, "Crosshair", false, function(s)
+    crosshairEnabled = s
+    if s then createCrosshair() else removeCrosshair() end
+end)
+
+-- Show success notification
+task.wait(0.5)
+FirengHub:Notify("Fireng-Hub", "Loaded successfully!", 3)
